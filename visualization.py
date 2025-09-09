@@ -27,20 +27,6 @@ date_min, date_max, value_min, value_max = pl.read_csv("data/raw/collected.csv")
     pl.col('property_value').max().alias('max_value')
 ).row(0)
 
-# Вычисляем зум по умолчанию на 1/3 диапазона по X
-from datetime import datetime
-
-# Конвертируем даты в datetime для вычислений
-date_min_dt = datetime.fromisoformat(date_min.replace('T', ' ').replace('Z', ''))
-date_max_dt = datetime.fromisoformat(date_max.replace('T', ' ').replace('Z', ''))
-date_range = date_max_dt - date_min_dt
-zoom_range = date_range / 3
-zoom_start = date_min_dt + date_range / 4  # начинаем с 1/4 диапазона  
-zoom_end = zoom_start + zoom_range
-
-# Конвертируем обратно в строки для altair
-zoom_start_str = zoom_start.isoformat()
-zoom_end_str = zoom_end.isoformat()
 
 # Загружаем collected.csv для второго слоя
 collected_df = pl.read_csv("data/raw/collected.csv").select([
@@ -86,7 +72,7 @@ slider = alt.selection_point(
 base_chart = alt.Chart(combined_data).add_params(slider)
 
 common_encoding = {
-    'x': alt.X('date:T', scale=alt.Scale(domain=[zoom_start_str, zoom_end_str])),
+    'x': alt.X('date:T', scale=alt.Scale(domain=[date_min, date_max])),
     'y': alt.Y('value:Q', scale=alt.Scale(domain=[value_min, value_max])),
     'color': alt.Color(
         'layer:N', 
@@ -102,7 +88,7 @@ common_encoding = {
             padding=10
         )
     ),
-    'tooltip': ['value:Q', 'id:N', alt.Tooltip('date:T', format='%d.%m.%Y %H:%M', title='Дата и время')]
+    'tooltip': [alt.Tooltip('date:T', format='%d.%m.%Y %H:%M', title='Дата и время'), 'value:Q', 'id:N', 'layer:N']
 }
 
 # Series данные (линии с точками)
