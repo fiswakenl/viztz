@@ -1,0 +1,60 @@
+{
+  "mcpServers": {
+    "analyzer": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-server-analyzer"
+      ],
+      "env": {}
+    },
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem"
+      ],
+      "env": {}
+    },
+    "memory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "env": {}
+    },
+    "brightdata": {
+      "type": "sse",
+      "url": "https://mcp.brightdata.com/sse?token=1ac618a974fb9bba77e6a191f434a8432b92b6cce67b668fca89ab43628bfc8e"
+    },
+    "git": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-server-git"
+      ],
+      "env": {}
+    },
+    "sequential-thinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "env": {}
+    },
+    "tavily": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-tavily"
+      ],
+      "env": {}
+    }
+  }
+}
