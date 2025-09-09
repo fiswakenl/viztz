@@ -94,9 +94,8 @@ common_encoding = {
 # Series данные (линии с точками)
 series_layer = (base_chart
                 .mark_line(
-                    point=alt.OverlayMarkDef(size=100), 
-                    strokeWidth=2, 
-                    opacity=0.5
+                    point=alt.OverlayMarkDef(size=100, filled=False), 
+                    strokeWidth=2
                 )
                 .encode(**common_encoding)
                 .transform_filter(slider)
