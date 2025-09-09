@@ -16,6 +16,35 @@ df = pl.read_csv("data/raw/collected.csv").select([
     pl.col('property_value').cast(pl.Float64).alias('value')
 ])
 
+# %%
+# 1.1. Загрузка дополнительных серий из normalized данных
+print("Загружаем дополнительные серии из data/normalized/without_unit/...")
+
+import os
+from pathlib import Path
+
+additional_series_data = []
+normalized_dir = Path("data/normalized/without_unit/")
+
+for csv_file in normalized_dir.glob("*.csv"):
+    print(f"Загружаем {csv_file.name}...")
+    series_df = pl.read_csv(str(csv_file)).with_columns([
+        pl.lit("additional").alias("series_type")  # помечаем как дополнительные серии
+    ])
+    additional_series_data.append(series_df)
+
+# Объединяем все дополнительные серии
+if additional_series_data:
+    additional_df = pl.concat(additional_series_data)
+    print(f"Загружено {len(additional_series_data)} дополнительных серий, всего строк: {additional_df.height}")
+    
+    # Получаем список уникальных ID дополнительных серий
+    additional_series_ids = additional_df['id'].unique().sort().to_list()
+    print(f"Дополнительные серии: {additional_series_ids}")
+else:
+    additional_df = pl.DataFrame(schema={"id": pl.Utf8, "date": pl.Utf8, "value": pl.Float64, "series_type": pl.Utf8})
+    additional_series_ids = []
+
 # Подсчитываем количество уникальных дней для каждого ID
 # Создаем колонку только с датой (без времени)
 df = df.with_columns([
@@ -90,8 +119,51 @@ connect_lines = alt.param(
     bind=alt.binding_checkbox(name="Соединять точки линиями: ")
 )
 
+# Создание чекбоксов для дополнительных серий
+additional_series_params = {}
+if additional_series_ids:
+    print(f"Создаем чекбоксы для {len(additional_series_ids)} дополнительных серий...")
+    for series_id in additional_series_ids:
+        # Создаем параметр-чекбокс для каждой серии
+        param_name = f"{series_id}_checkbox"
+        additional_series_params[series_id] = alt.param(
+            value=False,
+            bind=alt.binding_checkbox(name=f"Показать {series_id}: ")
+        )
+
+# Подготавливаем дополнительные серии для объединения
+if additional_series_ids:
+    # Добавляем колонку date_only для дополнительных данных
+    additional_df_with_date = additional_df.with_columns([
+        pl.col('date').str.slice(0, 10).alias('date_only')  # берем только YYYY-MM-DD
+    ])
+    
+    # Конвертируем основные данные в строковые ID для совместимости
+    final_data_str = final_data.with_columns([
+        pl.col('id').cast(pl.Utf8)
+    ])
+    
+    # Добавляем колонки для совместимости с основными данными
+    prepared_additional = additional_df_with_date.with_columns([
+        pl.lit(-1).cast(pl.Int64).alias('group_number'),  # специальная группа для дополнительных серий
+        pl.lit(1).cast(pl.UInt32).alias('unique_days')    # фиктивное значение, UInt32 как в основных данных
+    ]).drop('series_type').select([
+        'id', 'date', 'value', 'date_only', 'unique_days', 'group_number'  # тот же порядок что и в основных данных
+    ])
+    
+    # Проверяем схемы данных
+    print("Схема основных данных:", final_data_str.schema)
+    print("Схема дополнительных данных:", prepared_additional.schema)
+    
+    # Объединяем все данные (основные + дополнительные)
+    combined_data = pl.concat([final_data_str, prepared_additional])
+else:
+    # Если нет дополнительных серий, также конвертируем основные данные в строковые ID
+    combined_data = final_data.with_columns([pl.col('id').cast(pl.Utf8)])
+
 # Базовый чарт с параметрами
-base_chart = alt.Chart(final_data).add_params(group_param, connect_lines)
+all_params = [group_param, connect_lines] + list(additional_series_params.values())
+base_chart = alt.Chart(combined_data).add_params(*all_params)
 
 # Основная визуализация точек
 points = base_chart.mark_point(
@@ -118,8 +190,13 @@ points = base_chart.mark_point(
         alt.Tooltip('unique_days:Q', title='Заполненных дней')
     ]
 ).transform_filter(
-    # Показываем только выбранную группу
-    alt.datum.group_number == group_param
+    # Показываем выбранную группу ИЛИ выбранные дополнительные серии
+    f"datum.group_number == {group_param.name}" +
+    ("" if not additional_series_params else 
+     " || (" + " || ".join([
+         f"(datum.id == '{series_id}' && {param.name})" 
+         for series_id, param in additional_series_params.items()
+     ]) + ")")
 )
 
 # Слой линий для соединения точек одного ID
@@ -132,8 +209,13 @@ lines = base_chart.mark_line(
     opacity=alt.condition(connect_lines, alt.value(0.6), alt.value(0)),  # видимость через checkbox
     detail='id:N'  # группировка по ID для отдельных линий
 ).transform_filter(
-    # Показываем только выбранную группу
-    alt.datum.group_number == group_param
+    # Показываем выбранную группу ИЛИ выбранные дополнительные серии
+    f"datum.group_number == {group_param.name}" +
+    ("" if not additional_series_params else 
+     " || (" + " || ".join([
+         f"(datum.id == '{series_id}' && {param.name})" 
+         for series_id, param in additional_series_params.items()
+     ]) + ")")
 )
 
 # Объединяем слои точек и линий
