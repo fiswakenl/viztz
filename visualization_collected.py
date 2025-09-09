@@ -24,11 +24,13 @@ import os
 from pathlib import Path
 
 additional_series_data = []
-normalized_dir = Path("data/normalized/without_unit/")
+normalized_dir = Path("data/normalized/with_unit/")
 
 for csv_file in normalized_dir.glob("*.csv"):
     print(f"Загружаем {csv_file.name}...")
-    series_df = pl.read_csv(str(csv_file)).with_columns([
+    series_df = pl.read_csv(str(csv_file)).select([
+        'id', 'date', 'value'  # игнорируем колонку unit
+    ]).with_columns([
         pl.lit("additional").alias("series_type")  # помечаем как дополнительные серии
     ])
     additional_series_data.append(series_df)
@@ -119,6 +121,16 @@ connect_lines = alt.param(
     bind=alt.binding_checkbox(name="Соединять точки линиями: ")
 )
 
+# Параметр для выбора единиц измерения
+unit_multiplier = alt.param(
+    value=1,
+    bind=alt.binding_radio(
+        options=[1, 1024, 1024**2, 1024**3],
+        labels=["GB", "MB", "KB", "bytes"],
+        name="Единицы измерения: "
+    )
+)
+
 # Создание чекбоксов для дополнительных серий
 additional_series_params = {}
 if additional_series_ids:
@@ -143,10 +155,25 @@ if additional_series_ids:
         pl.col('id').cast(pl.Utf8)
     ])
     
+    # Вычисляем реальные значения unique_days для дополнительных серий
+    additional_days_per_id = additional_df_with_date.group_by('id').agg([
+        pl.col('date_only').n_unique().alias('unique_days')
+    ])
+    
+    print(f"Подсчитанные дни для дополнительных серий:")
+    for row in additional_days_per_id.iter_rows(named=True):
+        print(f"  {row['id']}: {row['unique_days']} дней")
+    
+    # Объединяем дополнительные данные с подсчитанными днями
+    additional_df_with_days = additional_df_with_date.join(
+        additional_days_per_id, 
+        on='id', 
+        how='left'
+    )
+    
     # Добавляем колонки для совместимости с основными данными
-    prepared_additional = additional_df_with_date.with_columns([
+    prepared_additional = additional_df_with_days.with_columns([
         pl.lit(-1).cast(pl.Int64).alias('group_number'),  # специальная группа для дополнительных серий
-        pl.lit(1).cast(pl.UInt32).alias('unique_days')    # фиктивное значение, UInt32 как в основных данных
     ]).drop('series_type').select([
         'id', 'date', 'value', 'date_only', 'unique_days', 'group_number'  # тот же порядок что и в основных данных
     ])
@@ -162,16 +189,18 @@ else:
     combined_data = final_data.with_columns([pl.col('id').cast(pl.Utf8)])
 
 # Базовый чарт с параметрами
-all_params = [group_param, connect_lines] + list(additional_series_params.values())
+all_params = [group_param, connect_lines, unit_multiplier] + list(additional_series_params.values())
 base_chart = alt.Chart(combined_data).add_params(*all_params)
 
 # Основная визуализация точек
 points = base_chart.mark_point(
     size=50,  # увеличенные точки
     opacity=0.8
+).transform_calculate(
+    converted_value=f'datum.group_number == -1 ? datum.value * {unit_multiplier.name} : datum.value'
 ).encode(
     x=alt.X('date:T', title='Дата'),
-    y=alt.Y('value:Q', title='Значение'),
+    y=alt.Y('converted_value:Q', title='Значение'),
     color=alt.Color(
         'id:N', 
         scale=alt.Scale(scheme='category20'),
@@ -185,7 +214,7 @@ points = base_chart.mark_point(
     ),
     tooltip=[
         alt.Tooltip('date:T', format='%d.%m.%Y %H:%M:%S', title='Дата и время'),
-        alt.Tooltip('value:Q', format='.0f', title='Значение'), 
+        alt.Tooltip('converted_value:Q', format='.0f', title='Значение'), 
         alt.Tooltip('id:N', title='ID'),
         alt.Tooltip('unique_days:Q', title='Заполненных дней')
     ]
@@ -202,9 +231,11 @@ points = base_chart.mark_point(
 # Слой линий для соединения точек одного ID
 lines = base_chart.mark_line(
     strokeWidth=1
+).transform_calculate(
+    converted_value=f'datum.group_number == -1 ? datum.value * {unit_multiplier.name} : datum.value'
 ).encode(
     x=alt.X('date:T', sort='ascending'),  # сортировка по времени
-    y=alt.Y('value:Q'),
+    y=alt.Y('converted_value:Q'),
     color=alt.Color('id:N', scale=alt.Scale(scheme='category20'), legend=None),  # без легенды для линий
     opacity=alt.condition(connect_lines, alt.value(0.6), alt.value(0)),  # видимость через checkbox
     detail='id:N'  # группировка по ID для отдельных линий
