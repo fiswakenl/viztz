@@ -84,8 +84,14 @@ group_param = alt.param(
     )
 )
 
+# Параметр для включения/отключения линий
+connect_lines = alt.param(
+    value=False,
+    bind=alt.binding_checkbox(name="Соединять точки линиями: ")
+)
+
 # Базовый чарт с параметрами
-base_chart = alt.Chart(final_data).add_params(group_param)
+base_chart = alt.Chart(final_data).add_params(group_param, connect_lines)
 
 # Основная визуализация точек
 points = base_chart.mark_point(
@@ -114,15 +120,32 @@ points = base_chart.mark_point(
 ).transform_filter(
     # Показываем только выбранную группу
     alt.datum.group_number == group_param
-).properties(
+)
+
+# Слой линий для соединения точек одного ID
+lines = base_chart.mark_line(
+    strokeWidth=1
+).encode(
+    x=alt.X('date:T', sort='ascending'),  # сортировка по времени
+    y=alt.Y('value:Q'),
+    color=alt.Color('id:N', scale=alt.Scale(scheme='category20'), legend=None),  # без легенды для линий
+    opacity=alt.condition(connect_lines, alt.value(0.6), alt.value(0)),  # видимость через checkbox
+    detail='id:N'  # группировка по ID для отдельных линий
+).transform_filter(
+    # Показываем только выбранную группу
+    alt.datum.group_number == group_param
+)
+
+# Объединяем слои точек и линий
+chart = alt.layer(points, lines).properties(
     width=1200, 
     height=700, 
     title=alt.Title(
         "Collected данные: отсортировано по количеству заполненных дней",
-        subtitle=f"Фильтр: >{MIN_DAYS} дней. Группы по 20 ID. Всего {filtered_ids.height} ID в {total_groups} группах"
+        subtitle=f"Фильтр: >{MIN_DAYS} дней. Группы по 10 ID. Всего {filtered_ids.height} ID в {total_groups} группах"
     )
 ).interactive()
 
 # Отображаем график
-points
+chart
 # %%
