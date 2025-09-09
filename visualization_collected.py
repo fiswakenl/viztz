@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 
 additional_series_data = []
-normalized_dir = Path("data/normalized/with_unit/")
+normalized_dir = Path("data/normalized/")
 
 for csv_file in normalized_dir.glob("*.csv"):
     print(f"Загружаем {csv_file.name}...")
