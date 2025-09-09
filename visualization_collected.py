@@ -126,7 +126,7 @@ unit_multiplier = alt.param(
     value=1,
     bind=alt.binding_radio(
         options=[1, 1024, 1024**2, 1024**3],
-        labels=["GB", "MB", "KB", "bytes"],
+        labels=["^0", "^1", "^2", "^3"],
         name="Единицы измерения: "
     )
 )
